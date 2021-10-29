@@ -121,17 +121,6 @@ def build_req_body(config):
     branch = repo.active_branch
     latest_commit = None
 
-    # this will definitely need more work in
-    # the future as i've only had so little
-    # experience with GitPython.
-    try:
-        gitcmd.log('-n 1')
-    except ValueError as e:
-        print("[ - ] Empty git repository. GitPython Said:", file = stderr)
-        print("[ - ] %s" % str(e), file = stderr)
-
-        sysexit(1)
-
     content = "**New commit to** **`%s`**:\n" % branch.name
 
     # adjust if you want different results.
