@@ -119,9 +119,11 @@ def build_req_body(config):
     gitcmd = git.Git(get_project_dir())
 
     branch = repo.active_branch
+    project_name = os.basename(get_project_dir())
     latest_commit = None
 
-    content = "**New commit to** **`%s`**:\n" % branch.name
+    content = "**`%s`** - **New commit to `'%s'`**:\n" % (project_name,
+        branch.name)
 
     # adjust if you want different results.
     content += "**```diff\n"
