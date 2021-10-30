@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+# an indicator so to know that the following messages may be related to
+# git-notif.
+from sys import stderr
+
+print("[ + ] Git-Notif", file = stderr)
+
 import atexit
 import git
 import json
@@ -7,12 +13,63 @@ import os
 
 from http import HTTPStatus
 from http.client import HTTPSConnection, HTTPS_PORT
-from sys import stderr, exit as sysexit
+from sys import exit as sysexit
 
 # the config file must always be located at
 # __project_root__/.wh_config.json
 
 BASE_DOMAIN = "discord.com"
+
+newer_keys = {
+    'include_diff': False
+}
+
+# simple class for building valid discord form data messages.
+# not flexible enough for other uses.
+class DiscordFormData(object):
+    boundary_name = 'boundary'
+
+    def __init__(self, data, json_data, form_filename = '.diff'):
+        if 'attachments' not in json_data:
+            json_data['attachments'] = []
+
+        json_data['attachments'].append({
+            'id': len(json_data['attachments']),
+            'filename': form_filename
+        })
+
+        self.json_data = json_data
+        self.form_filename = form_filename
+        self.data = data
+
+        self._form_buffer = ""
+
+    def _add_line(self, line_data):
+        self._form_buffer += line_data + '\n'
+
+    def _add_boundary(self):
+        self._form_buffer += "\r\n--%s\n" % DiscordFormData.boundary_name
+
+    def _write_data(self, data):
+        self._form_buffer += '\n'
+        self._form_buffer += data
+
+    def build_form(self):
+        self._add_boundary()
+        self._add_line('Content-Disposition: form-data; name="payload_json"')
+        self._add_line('Content-Type: application/json')
+        self._write_data(json.dumps(self.json_data))
+
+        self._add_boundary()
+        self._form_buffer += 'Content-Disposition: form-data; '
+        self._form_buffer += 'name="files[0]"; '
+        self._form_buffer += 'filename="%s"\n' % self.form_filename
+        self._add_line('Content-Type: text/x-diff')
+        self._write_data(self.data)
+
+        self._form_buffer += '\r\n--%s--' % DiscordFormData.boundary_name
+
+        return self._form_buffer.encode('utf-8')
 
 def get_project_dir():
     git_dir = os.environ.get('GIT_DIR')
@@ -53,7 +110,8 @@ def _load_config():
                     'wh_id': '',
                     'wh_token': '',
                     'wh_username': '',
-                    'wh_avatar_url': ''
+                    'wh_avatar_url': '',
+                    'include_diff': False
                 },
                 indent = 2
             ))
@@ -97,6 +155,23 @@ def _load_config():
         len(config_data['wh_avatar_url']) == 0):
         config_data['wh_avatar_url'] = 'https://git-scm.com/images/logos/downloads/Git-Icon-1788C.png'
 
+    warn_keys = []
+    for key in newer_keys.keys():
+        if key in config_data:
+            continue
+        
+        warn_keys.append(key)
+
+    if len(warn_keys) > 0:
+        print("[ - ] Warning: The default values for the following keys will" +
+            " be used since they were not found in your config file:",
+            file = stderr)
+        print("[ - ] '%s'" % ', '.join(warn_keys), file = stderr)
+
+        # set the defaults
+        for key in warn_keys:
+            config_data[key] = newer_keys[key]
+
     return config_data
 
 def httpcon_setup():
@@ -119,8 +194,7 @@ def build_req_body(config):
     gitcmd = git.Git(get_project_dir())
 
     branch = repo.active_branch
-    project_name = os.basename(get_project_dir())
-    latest_commit = None
+    project_name = os.path.basename(get_project_dir())
 
     content = "**`%s`** - **New commit to `'%s'`**:\n" % (project_name,
         branch.name)
@@ -130,24 +204,62 @@ def build_req_body(config):
     content += discord_trim(gitcmd.log('-n 1'))
     content += "\n```**"
 
-    return json.dumps({
+    json_data = {
         'username': config['wh_username'],
         'content': content,
         'avatar_url': config['wh_avatar_url']
-    })
+    }
+
+    if config['include_diff']:
+        try:
+            commit_history = list(repo.iter_commits())
+        except ValueError as e:
+            print("[ - ] Failed: %s" % str(e))
+
+        if len(commit_history) == 1:
+            commit_diff = "(No history to compare to.)"
+        else:
+            commit_diff = "Comparing:\n"
+
+            commit_diff += ((' ' * 4) + commit_history[0].binsha.hex()
+                + '\n')
+            commit_diff += ((' ' * 4) + commit_history[1].binsha.hex()
+                + '\n\n')
+            commit_diff += gitcmd.diff('%s..%s' % (
+                commit_history[0].binsha.hex(),
+                commit_history[1].binsha.hex()
+            ))
+
+        discord_form = DiscordFormData(
+            commit_diff,
+            json_data = json_data
+        )
+
+        return discord_form.build_form()
+
+    return json.dumps(json_data)
 
 def main(config):
     httpcon = httpcon_setup()
+    
+    if config['include_diff']:
+        headers = {
+            'Content-Type': ('multipart/form-data; boundary=%s' %
+                DiscordFormData.boundary_name)
+        }
+    else:
+        headers = {'Content-Type': 'application/json'}
+
     httpcon.request(
         'POST',
         '/api/webhooks/' + config['wh_id'] + '/' + config['wh_token'],
         body = build_req_body(config),
-        headers = {'Content-Type': 'application/json'}
+        headers = headers
     )
 
     resp = httpcon.getresponse()
 
-    if resp.status != HTTPStatus.NO_CONTENT:
+    if resp.status != HTTPStatus.NO_CONTENT and resp.status != HTTPStatus.OK:
         print("[ - ] Server returned unrecognized http code: %d"
             % resp.status, file = stderr)
         print("[ - ] Message: '%s'" % resp.read().decode('ascii'))
