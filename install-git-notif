@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+CURL_LOC=$(which curl)
+
+if [[ $? -ne 0 ]]; then
+    if [[ -z $1 ]]; then
+        echo "[ - ] Failed to locate cURL." 1>&2
+        echo "[ - ] Make sure cURL is installed and available." 1>&2
+        echo "[ - ] Alternatively, you may pass this script a valid location to a cURL binary as it's first argument." 1>&2
+        exit 1
+    fi
+
+    if [[ $($1 -V | grep -Eo "^curl") != "curl" ]]; then
+        echo "[ - ] ${1} is not a valid cURL binary." 1>&2
+        exit 1
+    fi
+
+    CURL_LOC=$1
+fi
+
+if [[ -z $GIT_DIR ]]; then
+    GIT_DIR=".git"
+fi
+
+# ensure we're inside a git repository.
+if [[ $(find . -maxdepth 1 -type d -name $GIT_DIR -printf "%P" | tr -d "\n") != $GIT_DIR ]]; then
+    echo "[ - ] No git directory found." 1>&2
+    echo "[ - ] Make sure you're inside a git repository." 1>&2
+    exit 1
+fi
+
+HOOKS_DIR=$(git config core.hooksPath)
+if [[ -z $HOOKS_DIR ]]; then
+    HOOKS_DIR=$GIT_DIR/hooks
+fi
+
+# ensure we have rw perms on the hooks dir.
+if [[ ! -r $HOOKS_DIR ]] || [[ ! -w $HOOKS_DIR ]]; then
+    echo "[ - ] Unable to access ${HOOKS_DIR}." 1>&2
+    exit 1
+fi
+
+# preserve the current path just in case
+PROJ_DIR=$(pwd)
+
+cd $HOOKS_DIR
+$CURL_LOC https://raw.githubusercontent.com/tins2831/git-notif/master/notifier.py --output post-commit
+
+chmod 755 post-commit
+
+# python3 is already installed, so use it to handle the installation of the
+# config file instead of having the end-user install further dependencies
+# like jq.
+cd $PROJ_DIR
+python3 -c '
+import json
+import os.path
+
+newer_keys = {
+    "include_diff": False
+}
+
+if os.path.exists(".wh_config.json"):
+    config_fobj = open(".wh_config.json", "r")
+    config_data = json.loads(config_fobj.read())
+    config_updated = False
+
+    config_fobj.close()
+
+    missing = []
+    for key in newer_keys.keys():
+        if key in config_data:
+            continue
+        
+        missing.append(key)
+
+    if len(missing) > 0:
+        for key in missing.keys():
+            config_data[key] = newer_keys[key]
+        
+        config_updated = True
+
+    config_fobj = open(".wh_config.json", "w")
+
+    config_fobj.write(json.dumps(config_data, indent = 2))
+    config_fobj.close()
+
+    if config_updated:
+        print("[ + ] Config file updated.")
+else:
+    config_fobj = open(".wh_config.json", "w")
+    config_data = {
+        "wh_id": "",
+        "wh_token": "",
+        "wh_username": "",
+        "wh_avatar_url": "",
+        "include_diff": False
+    }
+
+    config_fobj.write(json.dumps(config_data, indent = 2))
+    config_fobj.close()
+'
+
+EXIT_CODE_PRESERVED=$?
+if [[ $EXIT_CODE_PRESERVED -ne 0 ]]; then
+    echo "[ - ] Failed to set the config file." 1>&2
+    exit $EXIT_CODE_PRESERVED
+fi
+
+echo "[ + ] Installed."
