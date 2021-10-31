@@ -15,4 +15,4 @@ https://discord.com/api/webhooks/{id}/{token}
 ```
 
 ### Sample
-![Sample image](2021-10-29_15-00.png)
+![Sample image](sample.png)
