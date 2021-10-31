@@ -169,7 +169,7 @@ def _load_config():
         print("[ - ] '%s'" % ', '.join(warn_keys), file = stderr)
 
         # set the defaults
-        for key in warn_keys:
+        for key in warn_keys.keys():
             config_data[key] = newer_keys[key]
 
     return config_data
