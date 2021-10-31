@@ -221,13 +221,13 @@ def build_req_body(config):
         else:
             commit_diff = "Comparing:\n"
 
-            commit_diff += ((' ' * 4) + commit_history[0].binsha.hex()
-                + '\n')
             commit_diff += ((' ' * 4) + commit_history[1].binsha.hex()
+                + '\n')
+            commit_diff += ((' ' * 4) + commit_history[0].binsha.hex()
                 + '\n\n')
             commit_diff += gitcmd.diff('%s..%s' % (
-                commit_history[0].binsha.hex(),
-                commit_history[1].binsha.hex()
+                commit_history[1].binsha.hex(),
+                commit_history[0].binsha.hex()
             ))
 
         discord_form = DiscordFormData(
