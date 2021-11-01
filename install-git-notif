@@ -76,7 +76,7 @@ if os.path.exists(".wh_config.json"):
         missing.append(key)
 
     if len(missing) > 0:
-        for key in missing.keys():
+        for key in missing:
             config_data[key] = newer_keys[key]
         
         config_updated = True
