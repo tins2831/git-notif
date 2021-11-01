@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 
-CURL_LOC=$(which curl)
+ALT_CURL=$1
+UPDATE_WH=$2
+
+USING_ALT_CURL=false
+CURL_LOC=$(which SDFGSD)
 
 if [[ $? -ne 0 ]]; then
-    if [[ -z $1 ]]; then
+    if [[ -z $ALT_CURL ]]; then
         echo "[ - ] Failed to locate cURL." 1>&2
         echo "[ - ] Make sure cURL is installed and available." 1>&2
         echo "[ - ] Alternatively, you may pass this script a valid location to a cURL binary as it's first argument." 1>&2
         exit 1
     fi
 
-    if [[ $($1 -V | grep -Eo "^curl") != "curl" ]]; then
-        echo "[ - ] ${1} is not a valid cURL binary." 1>&2
+    if [[ $($ALT_CURL -V 2>/dev/null | grep -Eo "^curl") != "curl" ]]; then
+        echo "[ - ] '${ALT_CURL}' is not a valid cURL binary." 1>&2
         exit 1
     fi
 
-    CURL_LOC=$1
+    CURL_LOC="${ALT_CURL}"
+    USING_ALT_CURL=true
 fi
 
 if [[ -z $GIT_DIR ]]; then
@@ -42,16 +47,32 @@ fi
 
 # preserve the current path just in case
 PROJ_DIR=$(pwd)
+RAW_URL="https://raw.githubusercontent.com/tins2831/git-notif/master/notifier.py"
+CURL_OPTS="--silent --show-error"
 
 cd $HOOKS_DIR
-$CURL_LOC https://raw.githubusercontent.com/tins2831/git-notif/master/notifier.py --output post-commit
+$CURL_LOC $CURL_OPTS --output post-commit $RAW_URL
+
+EXIT_CODE_PRESERVED=$?
+if [[ $EXIT_CODE_PRESERVED -ne 0 ]]; then
+    echo "[ - ] cURL command failed." 1>&2
+    exit $EXIT_CODE_PRESERVED
+fi
 
 chmod 755 post-commit
+
+cd $PROJ_DIR
+
+# if -u is the first command line arg then move it over to $UPDATE_WH.
+if ! $USING_ALT_CURL && [[ -z $UPDATE_WH ]]; then
+    if [[ ! -z $ALT_CURL ]]; then
+        UPDATE_WH="${ALT_CURL}"
+    fi
+fi
 
 # python3 is already installed, so use it to handle the installation of the
 # config file instead of having the end-user install further dependencies
 # like jq.
-cd $PROJ_DIR
 python3 -c '
 import json
 import sys
@@ -81,6 +102,14 @@ if os.path.exists(".wh_config.json"):
         
         config_updated = True
 
+    if len(sys.argv) >= 3 and sys.argv[2] in "-u|--update-webhook".split("|"):
+        wh_url_split = sys.argv[1].split("/")
+
+        config_data["wh_id"] = wh_url_split[-2]
+        config_data["wh_token"] = wh_url_split[-1]
+
+        print("[ + ] Updated config webhook details.")
+
     config_fobj = open(".wh_config.json", "w")
 
     config_fobj.write(json.dumps(config_data, indent = 2))
@@ -106,7 +135,7 @@ else:
 
     config_fobj.write(json.dumps(config_data, indent = 2))
     config_fobj.close()
-' $DISCORD_WH_URL
+' $DISCORD_WH_URL $UPDATE_WH
 
 EXIT_CODE_PRESERVED=$?
 if [[ $EXIT_CODE_PRESERVED -ne 0 ]]; then
