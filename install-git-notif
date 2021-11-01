@@ -4,7 +4,7 @@ ALT_CURL=$1
 UPDATE_WH=$2
 
 USING_ALT_CURL=false
-CURL_LOC=$(which SDFGSD)
+CURL_LOC=$(which curl)
 
 if [[ $? -ne 0 ]]; then
     if [[ -z $ALT_CURL ]]; then
