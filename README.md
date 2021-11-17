@@ -11,7 +11,7 @@ Use the [`install-git-notif`](install-git-notif) installer script to install `gi
 $ DISCORD_WH_URL="https://discord.com/api/webhooks/8378377823423423423/qwertyuiop" ./install-git-notif -u
 ```
 
-If `-u|--update-webhook` is not in the command line arguments, then the installer script will not update the existing webhook details.
+If `-u|--update-webhook` is not in the command line arguments, then the installer script will not update the existing webhook details. The installer script will also append `.wh_config.json` to the project-level `.gitignore` file, creating it if it doesn't exist.
 
 #### Manual installation
 Drop [`notifier.py`](notifier.py) into your git hooks directory (by default, it's `.git/hooks`) and rename the file to `post-commit`. Update `post-commit`'s permissions to allow it to be executable: `chmod 755 post-commit`.
